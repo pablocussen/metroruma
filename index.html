@@ -25,25 +25,6 @@
             <p class="text-xl md:text-2xl font-bold text-teal-400">Fábrica Biochar Fresia: Modelo de Flujo Continuo 24/7</p>
         </header>
 
-        <section class="mb-16 bg-slate-800 p-8 rounded-2xl shadow-lg">
-             <h2 class="text-3xl font-bold text-center mb-6 text-white">El Objetivo: Máxima Productividad</h2>
-             <p class="max-w-3xl mx-auto text-center text-slate-400 mb-8">Esta simulación demuestra cómo la planta, operando 24/7 con equipos especializados, puede alcanzar una producción constante y sostenible. El objetivo es validar un modelo operativo capaz de procesar **36 toneladas de biomasa húmeda al día** para generar **9 toneladas de biochar**, los 365 días del año.</p>
-             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
-                <div class="border-2 border-slate-700 p-6 rounded-xl">
-                    <p class="text-5xl font-black text-teal-400 mono">6</p>
-                    <p class="text-slate-400 mt-2">Reactores en Operación</p>
-                </div>
-                <div class="border-2 border-slate-700 p-6 rounded-xl">
-                    <p class="text-5xl font-black text-teal-400 mono">3</p>
-                    <p class="text-slate-400 mt-2">Ciclos por Reactor al Día</p>
-                </div>
-                <div class="border-2 border-slate-700 p-6 rounded-xl">
-                    <p class="text-5xl font-black text-teal-400 mono">365</p>
-                    <p class="text-slate-400 mt-2">Días de Producción al Año</p>
-                </div>
-             </div>
-        </section>
-
         <div class="bg-slate-800/80 backdrop-blur-sm p-4 rounded-xl shadow-lg mb-8 sticky top-4 z-20">
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 items-center">
                 <div class="col-span-2 md:col-span-4 lg:col-span-2">
@@ -92,7 +73,7 @@
                          </div>
                          <p class="text-center mt-2 font-bold mono text-xl"><span id="stock-level">0</span> / 36</p>
                     </div>
-                    <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
+                     <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
                         <h2 class="font-bold text-xl mb-4 border-b-2 border-slate-700 pb-2 text-white">Bitácora de Operaciones</h2>
                         <div id="log" class="text-sm text-slate-400 space-y-2 h-[450px] overflow-y-auto">
                             <p class="text-slate-500">Esperando inicio de simulación...</p>
@@ -100,18 +81,25 @@
                     </div>
                 </div>
                 <div class="lg:col-span-3">
-                     <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
+                      <div class="bg-slate-800 p-6 rounded-xl shadow-lg">
+                        <h2 class="font-bold text-xl mb-4 border-b-2 border-slate-700 pb-2 text-white">Estado de Reactores</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="reactors-grid"></div>
+                    </div>
+                     <div class="bg-slate-800 p-6 rounded-xl shadow-lg mt-8">
                          <h2 class="text-xl font-bold mb-4 text-white">Análisis de Flujo de Materiales (30 Días)</h2>
                          <div class="h-[300px] relative">
                             <canvas id="flowChart"></canvas>
                          </div>
                      </div>
-                      <div class="bg-slate-800 p-6 rounded-xl shadow-lg mt-8">
-                        <h2 class="font-bold text-xl mb-4 border-b-2 border-slate-700 pb-2 text-white">Estado de Reactores</h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="reactors-grid"></div>
-                    </div>
                 </div>
              </div>
+        </section>
+
+        <section id="service-analysis" class="bg-slate-800 p-8 rounded-2xl shadow-lg">
+            <h2 class="text-3xl font-bold text-center mb-6 text-white">Parámetro Clave: El Ciclo de Servicio (31 Minutos)</h2>
+            <p class="max-w-3xl mx-auto text-center text-slate-400 mb-8">El corazón de la eficiencia de la planta es el ciclo de servicio: el proceso de **31 minutos** donde el equipo de turno produce el biochar y recarga un reactor. Este análisis desglosa cada paso de esta operación crítica, la cual será optimizada durante la fase de I+D.</p>
+            <ol id="service-steps" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-center">
+            </ol>
         </section>
 
         <footer class="text-center text-slate-600 mt-12 text-sm">
@@ -146,6 +134,7 @@
             const reportModal = document.getElementById('report-modal');
             const reportContent = document.getElementById('report-content');
             const closeModalButton = document.getElementById('close-modal');
+            const serviceStepsContainer = document.getElementById('service-steps');
             
             let simulationInterval;
             let reactors = [];
@@ -160,6 +149,12 @@
             const START_TIME_MIN = 8 * 60;
             const BASKETS_PER_HOUR_PREP = 4;
             const KG_PER_CYCLE = 500;
+
+            const serviceSteps = [
+                { task: 'Apertura', time: 5 }, { task: 'Extracción', time: 5 },
+                { task: 'Traslado', time: 3 }, { task: 'Inserción', time: 3 },
+                { task: 'Cierre', time: 10 }, { task: 'Inicio', time: 5 }
+            ];
 
             const states = {
                 PRODUCING: { text: '⚙️ PRODUCIENDO', bgColor: 'bg-blue-900/50', borderColor: 'border-blue-500' },
@@ -195,6 +190,18 @@
                     stepped: true
                 }]
             };
+
+            function populateServiceSteps() {
+                serviceStepsContainer.innerHTML = '';
+                serviceSteps.forEach(step => {
+                    serviceStepsContainer.innerHTML += `
+                        <li class="bg-slate-700 p-3 rounded-lg">
+                            <p class="font-bold text-xl mono text-amber-400">${step.time}'</p>
+                            <p class="text-sm text-slate-300">${step.task}</p>
+                        </li>
+                    `;
+                });
+            }
 
             function createReactors() {
                 reactorsGrid.innerHTML = '';
@@ -423,8 +430,6 @@
                 chartData.labels = [];
                 chartData.datasets.forEach(ds => ds.data = []);
                 if(flowChart) flowChart.update();
-                kpiProduction.textContent = '0.0 T';
-                kpiStockBuffer.textContent = '0.0 h';
             }
 
             speedButtons.forEach(button => {
