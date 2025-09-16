@@ -55,22 +55,22 @@
 
         <div class="mb-8">
             <h2 class="text-2xl font-bold mb-4 text-center text-slate-300">Indicadores Clave de Rendimiento (KPIs) en Tiempo Real</h2>
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-6 text-center">
+                <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-400">Producción Total (T)</p>
+                    <p id="kpi-production" class="text-4xl font-bold mono text-sky-400">0.0</p>
+                </div>
                 <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
                     <p class="text-sm text-slate-400">Eficiencia (Uptime)</p>
                     <p id="kpi-efficiency" class="text-4xl font-bold mono text-green-400">0%</p>
                 </div>
                 <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
-                    <p class="text-sm text-slate-400">Producción Total</p>
-                    <p id="kpi-production" class="text-4xl font-bold mono text-sky-400">0 T</p>
+                    <p class="text-sm text-slate-400">OPEX Personal Acumulado</p>
+                    <p id="kpi-opex" class="text-4xl font-bold mono text-violet-400">$0 M</p>
                 </div>
                 <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
-                    <p class="text-sm text-slate-400">Ciclo Promedio</p>
-                    <p id="kpi-avg-cycle" class="text-4xl font-bold mono text-amber-400">0 h</p>
-                </div>
-                <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
-                    <p class="text-sm text-slate-400">Autonomía Stock</p>
-                    <p id="kpi-stock-buffer" class="text-4xl font-bold mono text-indigo-400">0 h</p>
+                    <p class="text-sm text-slate-400">Autonomía Stock (Horas)</p>
+                    <p id="kpi-stock-buffer" class="text-4xl font-bold mono text-indigo-400">0.0</p>
                 </div>
             </div>
         </div>
@@ -114,7 +114,7 @@
     <div id="report-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden">
         <div class="bg-slate-800 border-2 border-slate-700 rounded-2xl shadow-2xl p-8 max-w-2xl w-full text-center transform transition-all duration-300 scale-95 opacity-0">
             <h2 class="text-3xl font-black text-white mb-4">Fin de la Simulación de 30 Días</h2>
-            <p class="text-slate-400 mb-6">A continuación se detalla el resumen de productividad durante el mes.</p>
+            <p class="text-slate-400 mb-6">A continuación se detalla el resumen de productividad y KPIs durante el mes.</p>
             <div id="report-content" class="text-left border-t border-b border-slate-700 py-4"></div>
             <button id="close-modal" class="mt-8 bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-6 rounded-lg">Cerrar Reporte</button>
         </div>
@@ -143,6 +143,7 @@
             const kpiProduction = document.getElementById('kpi-production');
             const kpiAvgCycle = document.getElementById('kpi-avg-cycle');
             const kpiStockBuffer = document.getElementById('kpi-stock-buffer');
+            const kpiOpex = document.getElementById('kpi-opex');
             
             let simulationInterval;
             let reactors = [];
@@ -158,6 +159,12 @@
             const START_TIME_MIN = 8 * 60;
             const BASKETS_PER_HOUR_PREP = 4;
             const KG_PER_CYCLE = 500;
+            const OPEX_PER_DAY = {
+                phase1: 5364000 / 30,
+                phase2: 14590000 / 30,
+                phase3: 20060000 / 30,
+                phase4: 27088000 / 30
+            };
 
             const states = {
                 PRODUCING: { text: '⚙️ PRODUCIENDO', bgColor: 'bg-blue-900/50', borderColor: 'border-blue-500' },
@@ -247,6 +254,7 @@
             let totalUptimeMinutes = 0;
             let totalCompletedCycles = 0;
             let maintenanceDay = 7;
+            let cumulativeOpex = 0;
 
             function runSimulation() {
                 if (isPaused) return;
@@ -290,9 +298,13 @@
                     if(r.state === 'PRODUCING') totalUptimeMinutes++;
                 });
 
+                if ((virtualTime - START_TIME_MIN) % 1440 === 0) {
+                  cumulativeOpex += OPEX_PER_DAY.phase4;
+                }
+
                 kpiEfficiency.textContent = `${(totalUptimeMinutes / (TOTAL_REACTORS * (virtualTime - START_TIME_MIN)) * 100).toFixed(1)}%`;
                 kpiProduction.textContent = `${(totalCompletedCycles * KG_PER_CYCLE / 1000).toFixed(1)} T`;
-                kpiAvgCycle.textContent = totalCompletedCycles > 0 ? `${(totalUptimeMinutes / 60 / totalCompletedCycles).toFixed(1)} h` : '0 h';
+                kpiOpex.textContent = `$${(cumulativeOpex/1000000).toFixed(1)} M`;
                 kpiStockBuffer.textContent = `${(stock / 1.5).toFixed(1)} h`;
 
                 if (virtualTime >= START_TIME_MIN + SIMULATION_DURATION_MIN) {
@@ -378,13 +390,14 @@
                     { metric: 'Producción Total de Biochar', value: `${(totalCycles * KG_PER_CYCLE / 1000).toFixed(1)} Toneladas` },
                     { metric: 'Eficiencia (Uptime) Promedio', value: `${(totalUptimeMinutes / (TOTAL_REACTORS * (virtualTime - START_TIME_MIN)) * 100).toFixed(1)}%` },
                     { metric: 'Ciclos Promedio por Reactor', value: (totalCycles / TOTAL_REACTORS).toFixed(1) },
+                    { metric: 'OPEX de Personal del Mes', value: `$${(cumulativeOpex/1000000).toFixed(1)} M CLP` }
                 ];
 
                 rows.forEach(item => {
                     const row = document.createElement('tr');
                     row.innerHTML = `<td class="py-2">${item.metric}</td><td class="text-right font-bold mono">${item.value}</td>`;
                     tbody.appendChild(row);
-})
+                })
 
                 table.appendChild(tbody);
                 reportContent.appendChild(table);
@@ -409,7 +422,12 @@
                 totalUptimeMinutes = 0;
                 totalCompletedCycles = 0;
                 maintenanceDay = 7;
+                cumulativeOpex = 0;
                 createReactors();
+                kpiEfficiency.textContent = '0%';
+                kpiProduction.textContent = '0.0 T';
+                kpiOpex.textContent = '$0 M';
+                kpiStockBuffer.textContent = '0.0 h';
             }
 
             speedButtons.forEach(button => {
