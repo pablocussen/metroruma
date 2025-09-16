@@ -53,6 +53,28 @@
             </div>
         </div>
 
+        <div class="mb-8">
+            <h2 class="text-2xl font-bold mb-4 text-center text-slate-300">Indicadores Clave de Rendimiento (KPIs) en Tiempo Real</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+                <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-400">Eficiencia (Uptime)</p>
+                    <p id="kpi-efficiency" class="text-4xl font-bold mono text-green-400">0%</p>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-400">Producción Total</p>
+                    <p id="kpi-production" class="text-4xl font-bold mono text-sky-400">0 T</p>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-400">Ciclo Promedio</p>
+                    <p id="kpi-avg-cycle" class="text-4xl font-bold mono text-amber-400">0 h</p>
+                </div>
+                <div class="bg-slate-800 p-4 rounded-xl shadow-lg">
+                    <p class="text-sm text-slate-400">Autonomía Stock</p>
+                    <p id="kpi-stock-buffer" class="text-4xl font-bold mono text-indigo-400">0 h</p>
+                </div>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 xl:grid-cols-4 gap-8">
             <div class="xl:col-span-3">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="reactors-grid"></div>
@@ -92,7 +114,7 @@
     <div id="report-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 hidden">
         <div class="bg-slate-800 border-2 border-slate-700 rounded-2xl shadow-2xl p-8 max-w-2xl w-full text-center transform transition-all duration-300 scale-95 opacity-0">
             <h2 class="text-3xl font-black text-white mb-4">Fin de la Simulación de 30 Días</h2>
-            <p class="text-slate-400 mb-6">A continuación se detalla el resumen de productividad de cada reactor durante el mes.</p>
+            <p class="text-slate-400 mb-6">A continuación se detalla el resumen de productividad durante el mes.</p>
             <div id="report-content" class="text-left border-t border-b border-slate-700 py-4"></div>
             <button id="close-modal" class="mt-8 bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 px-6 rounded-lg">Cerrar Reporte</button>
         </div>
@@ -116,6 +138,11 @@
             const reportModal = document.getElementById('report-modal');
             const reportContent = document.getElementById('report-content');
             const closeModalButton = document.getElementById('close-modal');
+
+            const kpiEfficiency = document.getElementById('kpi-efficiency');
+            const kpiProduction = document.getElementById('kpi-production');
+            const kpiAvgCycle = document.getElementById('kpi-avg-cycle');
+            const kpiStockBuffer = document.getElementById('kpi-stock-buffer');
             
             let simulationInterval;
             let reactors = [];
@@ -126,14 +153,17 @@
 
             const CYCLE_DURATION_MIN = 8 * 60;
             const SERVICE_TIME_MIN = 31;
+            const MAINTENANCE_DURATION_MIN = 3 * 60;
             const SIMULATION_DURATION_MIN = 30 * 24 * 60;
             const START_TIME_MIN = 8 * 60;
             const BASKETS_PER_HOUR_PREP = 4;
+            const KG_PER_CYCLE = 500;
 
             const states = {
                 PRODUCING: { text: '⚙️ PRODUCIENDO', bgColor: 'bg-blue-900/50', borderColor: 'border-blue-500' },
                 AWAITING_SERVICE: { text: '✔️ LISTO P/ SERVICIO', bgColor: 'bg-indigo-900/50', borderColor: 'border-indigo-400' },
                 SERVICING: { text: '🔧 EN SERVICIO', bgColor: 'bg-amber-900/50', borderColor: 'border-amber-500' },
+                MAINTENANCE: { text: '🛠️ MANTENIMIENTO', bgColor: 'bg-red-900/50', borderColor: 'border-red-500' },
             };
             
             const teamSchedule = [
@@ -148,7 +178,7 @@
                 reactors = [];
                 for (let i = 0; i < TOTAL_REACTORS; i++) {
                     const reactor = {
-                        id: i + 1, state: 'AWAITING_SERVICE', cycleEndTime: 0, completedCycles: 0,
+                        id: i + 1, state: 'AWAITING_SERVICE', cycleEndTime: 0, completedCycles: 0, maintenanceDue: false,
                     };
                     reactors.push(reactor);
                     reactorsGrid.innerHTML += `
@@ -163,16 +193,22 @@
                 }
             }
             
-            function formatTime(totalMinutes) {
+            function formatTime(totalMinutes, showDay = true) {
                 const day = Math.floor(totalMinutes / (24 * 60)) + 1;
                 const hours = Math.floor((totalMinutes / 60) % 24);
                 const minutes = Math.floor(totalMinutes % 60);
-                return `Día ${day} - ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+                return showDay ? `Día ${day} - ${timeStr}` : timeStr;
             }
 
-            function updateLog(message, time) {
+            function updateLog(message, time, type = 'info') {
                 const p = document.createElement('p');
-                p.innerHTML = `<span class="font-bold text-slate-500 mono">[${formatTime(time)}]</span> ${message}`;
+                let colorClass = 'text-slate-400';
+                if(type === 'success') colorClass = 'text-green-400';
+                if(type === 'warning') colorClass = 'text-amber-400';
+                if(type === 'logistics') colorClass = 'text-sky-400';
+
+                p.innerHTML = `<span class="font-bold text-slate-500 mono">[${formatTime(time)}]</span> <span class="${colorClass}">${message}</span>`;
                 logElement.prepend(p);
             }
 
@@ -186,13 +222,14 @@
                 statusElement.textContent = stateInfo.text;
                 
                 let progressPercentage = 0;
+                let currentServiceTime = reactor.maintenanceDue ? MAINTENANCE_DURATION_MIN : SERVICE_TIME_MIN;
                 if(reactor.state === 'PRODUCING') {
                     const elapsed = reactor.cycleEndTime - currentTime;
                     progressPercentage = 100 - (elapsed / CYCLE_DURATION_MIN) * 100;
                     timerElement.textContent = `Fin ciclo: ${formatTime(reactor.cycleEndTime)}`;
-                } else if (reactor.state === 'SERVICING') {
+                } else if (reactor.state === 'SERVICING' || reactor.state === 'MAINTENANCE') {
                     const elapsed = team.serviceEndTime - currentTime;
-                    progressPercentage = 100 - (elapsed / SERVICE_TIME_MIN) * 100;
+                    progressPercentage = 100 - (elapsed / currentServiceTime) * 100;
                     timerElement.textContent = `Fin servicio: ${formatTime(team.serviceEndTime)}`;
                 } else if (reactor.state === 'AWAITING_SERVICE') {
                     progressPercentage = 100;
@@ -207,25 +244,34 @@
             let lastPrepTick = 0;
             let truckArrivedToday = false;
             let isPaused = true;
+            let totalUptimeMinutes = 0;
+            let totalCompletedCycles = 0;
+            let maintenanceDay = 7;
 
             function runSimulation() {
                 if (isPaused) return;
 
                 virtualTime++;
-                const dayIndex = Math.floor((virtualTime / (24 * 60))) % 8;
+                const day = Math.floor(virtualTime / (24 * 60)) + 1;
+                const dayIndex = (day - 1) % 8;
                 const hour = Math.floor((virtualTime / 60) % 24);
 
                 clockElement.textContent = formatTime(virtualTime);
-
                 const isDayShift = hour >= 8 && hour < 20;
                 shiftStatusElement.textContent = isDayShift ? "☀️ DÍA" : "🌙 NOCHE";
                 const currentSchedule = teamSchedule[dayIndex];
                 teamDayElement.textContent = currentSchedule.day;
                 teamNightElement.textContent = currentSchedule.night;
                 teamOffElement.textContent = currentSchedule.off;
-                
                 const activeTeamName = isDayShift ? currentSchedule.day : currentSchedule.night;
 
+                if (day > maintenanceDay) {
+                    const reactorToMaintain = (maintenanceDay % TOTAL_REACTORS);
+                    reactors[reactorToMaintain].maintenanceDue = true;
+                    updateLog(`Mantenimiento programado para <strong>Reactor ${reactorToMaintain + 1}</strong>.`, virtualTime, 'warning');
+                    maintenanceDay += 7;
+                }
+                
                 const isPrepTeamActive = hour >= 8 && hour < 18;
                 if (isPrepTeamActive) {
                     if (virtualTime - lastPrepTick >= (60 / BASKETS_PER_HOUR_PREP)) {
@@ -235,20 +281,25 @@
                 }
                 
                 if (hour === 9 && !truckArrivedToday) {
-                    updateLog(`Llega camión con biomasa.`, virtualTime);
+                    updateLog(`Llega camión con biomasa.`, virtualTime, 'logistics');
                     truckArrivedToday = true;
                 }
                 if (hour < 9) truckArrivedToday = false;
 
-                stockLevelElement.textContent = stock;
-                stockBar.style.width = `${(stock / MAX_STOCK) * 100}%`;
-                stockBar.textContent = stock;
+                reactors.forEach(r => {
+                    if(r.state === 'PRODUCING') totalUptimeMinutes++;
+                });
+
+                kpiEfficiency.textContent = `${(totalUptimeMinutes / (TOTAL_REACTORS * (virtualTime - START_TIME_MIN)) * 100).toFixed(1)}%`;
+                kpiProduction.textContent = `${(totalCompletedCycles * KG_PER_CYCLE / 1000).toFixed(1)} T`;
+                kpiAvgCycle.textContent = totalCompletedCycles > 0 ? `${(totalUptimeMinutes / 60 / totalCompletedCycles).toFixed(1)} h` : '0 h';
+                kpiStockBuffer.textContent = `${(stock / 1.5).toFixed(1)} h`;
 
                 if (virtualTime >= START_TIME_MIN + SIMULATION_DURATION_MIN) {
                     clearInterval(simulationInterval);
                     simulationInterval = null;
                     isPaused = true;
-                    updateLog("<strong>Fin de la simulación de 30 días.</strong>", virtualTime);
+                    updateLog("<strong>Fin de la simulación de 30 días.</strong>", virtualTime, 'success');
                     generateReport();
                     return;
                 }
@@ -256,18 +307,22 @@
                 reactors.forEach(reactor => {
                     if (reactor.state === 'PRODUCING' && virtualTime >= reactor.cycleEndTime) {
                         reactor.state = 'AWAITING_SERVICE'; serviceQueue.push(reactor.id);
-                        updateLog(`Reactor ${reactor.id} listo para servicio.`, virtualTime);
+                        updateLog(`Reactor ${reactor.id} listo para servicio.`, virtualTime, 'info');
                     }
                 });
 
                 if (team.state === 'IDLE' && serviceQueue.length > 0) {
                     if (stock >= 2) {
                         const nextReactorId = serviceQueue.shift();
+                        const reactor = reactors[nextReactorId-1];
+                        
                         team.state = 'SERVICING'; team.currentTarget = nextReactorId;
-                        team.serviceEndTime = virtualTime + SERVICE_TIME_MIN;
-                        reactors[nextReactorId-1].state = 'SERVICING';
+                        let currentServiceTime = reactor.maintenanceDue ? MAINTENANCE_DURATION_MIN : SERVICE_TIME_MIN;
+                        reactor.state = reactor.maintenanceDue ? 'MAINTENANCE' : 'SERVICING';
+
+                        team.serviceEndTime = virtualTime + currentServiceTime;
                         stock -= 2;
-                        updateLog(`${activeTeamName} comienza servicio en <strong>R${nextReactorId}</strong>. Stock: ${stock}`, virtualTime);
+                        updateLog(`${activeTeamName} comienza ${reactor.maintenanceDue ? 'mantenimiento' : 'servicio'} en <strong>R${nextReactorId}</strong>. Stock: ${stock}`, virtualTime, reactor.maintenanceDue ? 'warning' : 'info');
                     }
                 }
 
@@ -275,21 +330,26 @@
                     const servicedReactor = reactors[team.currentTarget - 1];
                     servicedReactor.state = 'PRODUCING';
                     servicedReactor.cycleEndTime = virtualTime + CYCLE_DURATION_MIN;
-                    servicedReactor.completedCycles++;
-                    updateLog(`Servicio en <strong>R${servicedReactor.id}</strong> completado por ${activeTeamName}.`, virtualTime);
+                    
+                    if (!servicedReactor.maintenanceDue) {
+                        servicedReactor.completedCycles++;
+                        totalCompletedCycles++;
+                    } else {
+                         servicedReactor.maintenanceDue = false;
+                    }
+
+                    updateLog(`Servicio en <strong>R${servicedReactor.id}</strong> completado por ${activeTeamName}.`, virtualTime, 'success');
                     team.state = 'IDLE'; team.currentTarget = null;
                 }
-
                 reactors.forEach(r => updateUI(r, virtualTime));
             }
 
             function start() {
-                if(isPaused && simulationInterval) { // Resume
-                    isPaused = false;
-                } else if (!simulationInterval) { // Fresh start
+                if(isPaused && simulationInterval) { isPaused = false; } 
+                else if (!simulationInterval) {
                     isPaused = false;
                     logElement.innerHTML = '';
-                    updateLog(`<strong>Simulación de 30 días iniciada.</strong>`, virtualTime);
+                    updateLog(`<strong>Simulación de 30 días iniciada.</strong>`, virtualTime, 'success');
                     serviceQueue = reactors.map(r => r.id);
                     simulationInterval = setInterval(runSimulation, SIMULATION_SPEED_MS);
                 }
@@ -307,20 +367,26 @@
                 reportContent.innerHTML = '';
                 const table = document.createElement('table');
                 table.className = 'w-full text-lg text-slate-300';
-                table.innerHTML = `<thead><tr class="border-b border-slate-700"><th class="text-left pb-2">Reactor</th><th class="text-right pb-2">Total Ciclos Completados</th></tr></thead>`;
+                table.innerHTML = `<thead><tr class="border-b border-slate-700"><th class="text-left pb-2">Métrica</th><th class="text-right pb-2">Valor</th></tr></thead>`;
                 const tbody = document.createElement('tbody');
+                
                 let totalCycles = 0;
-                reactors.forEach(r => {
-                    totalCycles += r.completedCycles;
-                    const row = document.createElement('tr');
-                    row.innerHTML = `<td class="py-2">Reactor #${r.id}</td><td class="text-right font-bold mono">${r.completedCycles}</td>`;
-                    tbody.appendChild(row);
-                });
-                const tfoot = document.createElement('tfoot');
-                tfoot.innerHTML = `<tr class="border-t-2 border-slate-600 font-black"><td class="py-2">TOTAL PLANTA (30 días)</td><td class="text-right mono">${totalCycles}</td></tr>`;
-                table.appendChild(tbody);
-                table.appendChild(tfoot);
+                reactors.forEach(r => { totalCycles += r.completedCycles; });
 
+                const rows = [
+                    { metric: 'Ciclos Totales de la Planta', value: totalCycles },
+                    { metric: 'Producción Total de Biochar', value: `${(totalCycles * KG_PER_CYCLE / 1000).toFixed(1)} Toneladas` },
+                    { metric: 'Eficiencia (Uptime) Promedio', value: `${(totalUptimeMinutes / (TOTAL_REACTORS * (virtualTime - START_TIME_MIN)) * 100).toFixed(1)}%` },
+                    { metric: 'Ciclos Promedio por Reactor', value: (totalCycles / TOTAL_REACTORS).toFixed(1) },
+                ];
+
+                rows.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `<td class="py-2">${item.metric}</td><td class="text-right font-bold mono">${item.value}</td>`;
+                    tbody.appendChild(row);
+})
+
+                table.appendChild(tbody);
                 reportContent.appendChild(table);
                 reportModal.classList.remove('hidden');
                 setTimeout(() => reportModal.querySelector('div').classList.remove('scale-95', 'opacity-0'), 10);
@@ -340,6 +406,9 @@
                 stock = 12;
                 lastPrepTick = 0;
                 truckArrivedToday = false;
+                totalUptimeMinutes = 0;
+                totalCompletedCycles = 0;
+                maintenanceDay = 7;
                 createReactors();
             }
 
@@ -372,3 +441,4 @@
     </script>
 </body>
 </html>
+
